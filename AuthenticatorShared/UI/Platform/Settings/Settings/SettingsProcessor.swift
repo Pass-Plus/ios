@@ -89,6 +89,7 @@ final class SettingsProcessor: StateProcessor<SettingsState, SettingsAction, Set
         case .helpCenterTapped:
             state.url = ExternalLinksConstants.helpAndFeedback
         case .importItemsTapped:
+            fatalError("This is a test")
             coordinator.navigate(to: .importItems)
         case .languageTapped:
             coordinator.navigate(to: .selectLanguage(currentLanguage: state.currentLanguage), context: self)
