@@ -6,7 +6,7 @@ import XCTest
 
 // MARK: - VaultListSectionsBuilderTests
 
-class VaultListSectionsBuilderTests: BitwardenTestCase {
+class VaultListSectionsBuilderTests: BitwardenTestCase { // swiftlint:disable:this type_body_length
     // MARK: Properties
 
     var clientService: MockClientService!
@@ -32,18 +32,100 @@ class VaultListSectionsBuilderTests: BitwardenTestCase {
 
     // MARK: Tests
 
-    /// `addTrashSection()` adds the trash section to the list of sections with the count of deleted ciphers.
-    func test_addTrashSection() {
-        setUpSubject(withData: VaultListPreparedData(ciphersDeletedCount: 10))
+    /// `addAutofillPasswordsSection()` adds a vault section combinining exact and fuzzy match items.
+    func test_addAutofillPasswordsSection() {
+        setUpSubject(withData: VaultListPreparedData(
+            exactMatchItems: [
+                .fixture(cipherListView: .fixture(id: "1", name: "Exact42")),
+                .fixture(cipherListView: .fixture(id: "2", name: "Exact1")),
+                .fixture(cipherListView: .fixture(id: "4", name: "Exact2")),
+            ],
+            fuzzyMatchItems: [
+                .fixture(cipherListView: .fixture(id: "3", name: "Fuzzy11")),
+                .fixture(cipherListView: .fixture(id: "6", name: "Fuzzy10")),
+            ]
+        ))
 
-        let sections = subject.addTrashSection().build()
+        let vaultListData = subject.addAutofillPasswordsSection().build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
-            Section[Trash]: Trash
-              - Group[Trash]: Trash (10)
+            Section[AutofillPasswords]: 
+              - Cipher: Exact1
+              - Cipher: Exact2
+              - Cipher: Exact42
+              - Cipher: Fuzzy10
+              - Cipher: Fuzzy11
             """
         }
+    }
+
+    /// `addAutofillPasswordsSection()` adds a vault section with exact match items when no fuzzy items are present.
+    func test_addAutofillPasswordsSection_onlyExact() {
+        setUpSubject(withData: VaultListPreparedData(
+            exactMatchItems: [
+                .fixture(cipherListView: .fixture(id: "1", name: "Exact42")),
+                .fixture(cipherListView: .fixture(id: "2", name: "Exact1")),
+                .fixture(cipherListView: .fixture(id: "4", name: "Exact2")),
+            ],
+            fuzzyMatchItems: []
+        ))
+
+        let vaultListData = subject.addAutofillPasswordsSection().build()
+
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
+            """
+            Section[AutofillPasswords]: 
+              - Cipher: Exact1
+              - Cipher: Exact2
+              - Cipher: Exact42
+            """
+        }
+    }
+
+    /// `addAutofillPasswordsSection()` adds a vault section with fuzzy match items when no exact items are present.
+    func test_addAutofillPasswordsSection_onlyFuzzy() {
+        setUpSubject(withData: VaultListPreparedData(
+            exactMatchItems: [],
+            fuzzyMatchItems: [
+                .fixture(cipherListView: .fixture(id: "1", name: "Fuzzy42")),
+                .fixture(cipherListView: .fixture(id: "2", name: "Fuzzy1")),
+                .fixture(cipherListView: .fixture(id: "4", name: "Fuzzy2")),
+            ]
+        ))
+
+        let vaultListData = subject.addAutofillPasswordsSection().build()
+
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
+            """
+            Section[AutofillPasswords]: 
+              - Cipher: Fuzzy1
+              - Cipher: Fuzzy2
+              - Cipher: Fuzzy42
+            """
+        }
+    }
+
+    /// `addAutofillPasswordsSection()` doesn't add vault section when no exact nor fuzzy match items.
+    func test_addAutofillPasswordsSection_empty() {
+        setUpSubject(withData: VaultListPreparedData(
+            exactMatchItems: [],
+            fuzzyMatchItems: []
+        ))
+
+        let vaultListData = subject.addAutofillPasswordsSection().build()
+
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
+            """
+            """
+        }
+    }
+
+    /// `addCipherDecryptionFailureIds()` adds the list of cipher decryption failure IDs to the vault list data.
+    func test_addCipherDecryptionFailuresIds() {
+        setUpSubject(withData: VaultListPreparedData(cipherDecryptionFailureIds: ["1", "2", "3"]))
+        let vaultListData = subject.addCipherDecryptionFailureIds().build()
+        XCTAssertEqual(vaultListData.cipherDecryptionFailureIds, ["1", "2", "3"])
     }
 
     /// `addFavoritesSection()` adds the favorites section with the favorite items ordered by name.
@@ -58,9 +140,9 @@ class VaultListSectionsBuilderTests: BitwardenTestCase {
             )
         )
 
-        let sections = subject.addFavoritesSection().build()
+        let vaultListData = subject.addFavoritesSection().build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
             Section[Favorites]: Favorites
               - Cipher: MyFavoriteItem0
@@ -78,9 +160,9 @@ class VaultListSectionsBuilderTests: BitwardenTestCase {
             )
         )
 
-        let sections = subject.addFavoritesSection().build()
+        let vaultListData = subject.addFavoritesSection().build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
             """
         }
@@ -98,9 +180,9 @@ class VaultListSectionsBuilderTests: BitwardenTestCase {
             )
         )
 
-        let sections = subject.addGroupSection().build()
+        let vaultListData = subject.addGroupSection().build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
             Section[Items]: Items
               - Cipher: MyItem0
@@ -118,9 +200,9 @@ class VaultListSectionsBuilderTests: BitwardenTestCase {
             )
         )
 
-        let sections = subject.addGroupSection().build()
+        let vaultListData = subject.addGroupSection().build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
             """
         }
@@ -134,9 +216,9 @@ class VaultListSectionsBuilderTests: BitwardenTestCase {
             )
         )
 
-        let sections = subject.addTOTPSection().build()
+        let vaultListData = subject.addTOTPSection().build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
             Section[TOTP]: TOTP
               - Group[Types.VerificationCodes]: Verification codes (20)
@@ -152,10 +234,24 @@ class VaultListSectionsBuilderTests: BitwardenTestCase {
             )
         )
 
-        let sections = subject.addTOTPSection().build()
+        let vaultListData = subject.addTOTPSection().build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
+            """
+        }
+    }
+
+    /// `addTrashSection()` adds the trash section to the list of sections with the count of deleted ciphers.
+    func test_addTrashSection() {
+        setUpSubject(withData: VaultListPreparedData(ciphersDeletedCount: 10))
+
+        let vaultListData = subject.addTrashSection().build()
+
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
+            """
+            Section[Trash]: Trash
+              - Group[Trash]: Trash (10)
             """
         }
     }
@@ -173,13 +269,70 @@ class VaultListSectionsBuilderTests: BitwardenTestCase {
             )
         )
 
-        let sections = subject.addTypesSection().build()
+        let vaultListData = subject.addTypesSection().build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
             Section[Types]: Types
               - Group[Types.Logins]: Login (15)
               - Group[Types.Cards]: Card (10)
+              - Group[Types.Identities]: Identity (1)
+              - Group[Types.SecureNotes]: Secure note (2)
+              - Group[Types.SSHKeys]: SSH key (0)
+            """
+        }
+    }
+
+    /// `addTypesSection()` adds the Types section with each item type count, or 0 if not found
+    /// with restrictedOrganizationIds and cards.
+    func test_addTypesSection_restrictedOrganizationIds_cards() {
+        setUpSubject(
+            withData: VaultListPreparedData(
+                countPerCipherType: [
+                    .card: 10,
+                    .identity: 1,
+                    .login: 15,
+                    .secureNote: 2,
+                ],
+                restrictedOrganizationIds: ["org1", "org2"],
+            )
+        )
+
+        let vaultListData = subject.addTypesSection().build()
+
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
+            """
+            Section[Types]: Types
+              - Group[Types.Logins]: Login (15)
+              - Group[Types.Cards]: Card (10)
+              - Group[Types.Identities]: Identity (1)
+              - Group[Types.SecureNotes]: Secure note (2)
+              - Group[Types.SSHKeys]: SSH key (0)
+            """
+        }
+    }
+
+    /// `addTypesSection()` adds the Types section with each item type count, or 0 if not found
+    /// with restrictedOrganizationIds but no cards.
+    func test_addTypesSection_restrictedOrganizationIds_nocards() {
+        setUpSubject(
+            withData: VaultListPreparedData(
+                countPerCipherType: [
+                    .card: 0,
+                    .identity: 1,
+                    .login: 15,
+                    .secureNote: 2,
+                ],
+                restrictedOrganizationIds: ["org1", "org2"],
+            )
+        )
+
+        let vaultListData = subject.addTypesSection().build()
+
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
+            """
+            Section[Types]: Types
+              - Group[Types.Logins]: Login (15)
               - Group[Types.Identities]: Identity (1)
               - Group[Types.SecureNotes]: Secure note (2)
               - Group[Types.SSHKeys]: SSH key (0)
@@ -210,7 +363,7 @@ class VaultListSectionsBuilderTests: BitwardenTestCase {
             )
         )
 
-        let sections = try await subject
+        let vaultListData = try await subject
             .addTrashSection()
             .addCollectionsSection()
             .addFavoritesSection()
@@ -220,7 +373,7 @@ class VaultListSectionsBuilderTests: BitwardenTestCase {
             .addTypesSection()
             .build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
             Section[Trash]: Trash
               - Group[Trash]: Trash (10)
@@ -255,4 +408,4 @@ class VaultListSectionsBuilderTests: BitwardenTestCase {
             withData: withData
         )
     }
-}
+} // swiftlint:disable:this file_length

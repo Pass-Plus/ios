@@ -1,4 +1,5 @@
 import BitwardenKit
+import BitwardenResources
 import BitwardenSdk
 import Combine
 import Foundation
@@ -13,12 +14,11 @@ public protocol VaultRepository: AnyObject {
     /// be used to subscribe to the vault data, which are updated as a result of the request.
     ///
     /// - Parameters:
-    ///   - isRefresh: Whether the sync is being performed as a manual refresh.
+    ///   - forceSync: Whether the sync is forced.
     ///   - filter: The filter to apply to the vault.
-    /// - Returns: If a sync is performed without error, this returns `[VaultListSection]` to display.
+    ///   - isPeriodic: Whether the sync is periodic to take into account the minimum interval.
     ///
-    @discardableResult
-    func fetchSync(forceSync: Bool, filter: VaultFilterType) async throws -> [VaultListSection]?
+    func fetchSync(forceSync: Bool, filter: VaultFilterType, isPeriodic: Bool) async throws
 
     // MARK: Data Methods
 
@@ -234,7 +234,7 @@ public protocol VaultRepository: AnyObject {
         group: VaultListGroup?,
         rpID: String?,
         uri: String?
-    ) async throws -> AsyncThrowingPublisher<AnyPublisher<[VaultListSection], Error>>
+    ) async throws -> AsyncThrowingPublisher<AnyPublisher<VaultListData, Error>>
 
     /// Determine if a full sync is necessary.
     ///
@@ -265,7 +265,7 @@ public protocol VaultRepository: AnyObject {
         group: VaultListGroup?,
         rpID: String?,
         searchText: String
-    ) async throws -> AsyncThrowingPublisher<AnyPublisher<[VaultListSection], Error>>
+    ) async throws -> AsyncThrowingPublisher<AnyPublisher<VaultListData, Error>>
 
     /// A publisher for searching a user's cipher objects based on the specified search text and filter type.
     ///
@@ -290,7 +290,7 @@ public protocol VaultRepository: AnyObject {
     ///
     func vaultListPublisher(
         filter: VaultListFilter
-    ) async throws -> AsyncThrowingPublisher<AnyPublisher<[VaultListSection], Error>>
+    ) async throws -> AsyncThrowingPublisher<AnyPublisher<VaultListData, Error>>
 }
 
 extension VaultRepository {
@@ -552,7 +552,8 @@ class DefaultVaultRepository { // swiftlint:disable:this type_body_length
 
         return try await cipherService.ciphersPublisher().asyncTryMap { ciphers -> [CipherListView] in
             // Convert the Ciphers to CipherViews and filter appropriately.
-            let matchingCiphers = try await self.clientService.vault().ciphers().decryptList(ciphers: ciphers)
+            let matchingCiphers = try await self.clientService.vault().ciphers()
+                .decryptListWithFailures(ciphers: ciphers).successes
                 .filter { cipher in
                     filter.filterType.cipherFilter(cipher) &&
                         isMatchingCipher(cipher) &&
@@ -809,7 +810,8 @@ class DefaultVaultRepository { // swiftlint:disable:this type_body_length
         folders: [Folder] = []
     ) async throws -> [VaultListSection] {
         let restrictItemTypesOrgIds = await getRestrictItemTypesOrgIds()
-        let ciphers = try await clientService.vault().ciphers().decryptList(ciphers: ciphers)
+        let ciphers = try await clientService.vault().ciphers().decryptListWithFailures(ciphers: ciphers)
+            .successes
             .filter { cipher in
                 filter.filterType.cipherFilter(cipher) &&
                     filterBasedOnRestrictItemTypesPolicy(cipher: cipher, restrictItemTypesOrgIds)
@@ -891,7 +893,8 @@ class DefaultVaultRepository { // swiftlint:disable:this type_body_length
         filter: VaultListFilter
     ) async throws -> [VaultListSection] {
         let restrictItemTypesOrgIds = await getRestrictItemTypesOrgIds()
-        let ciphers = try await clientService.vault().ciphers().decryptList(ciphers: ciphers)
+        let ciphers = try await clientService.vault().ciphers().decryptListWithFailures(ciphers: ciphers)
+            .successes
             .filter { cipher in
                 filter.filterType.cipherFilter(cipher) &&
                     filterBasedOnRestrictItemTypesPolicy(cipher: cipher, restrictItemTypesOrgIds)
@@ -994,21 +997,10 @@ class DefaultVaultRepository { // swiftlint:disable:this type_body_length
 extension DefaultVaultRepository: VaultRepository {
     // MARK: API Methods
 
-    @discardableResult
-    func fetchSync(forceSync: Bool, filter: VaultFilterType) async throws -> [VaultListSection]? {
+    func fetchSync(forceSync: Bool, filter: VaultFilterType, isPeriodic: Bool) async throws {
         let allowSyncOnRefresh = try await stateService.getAllowSyncOnRefresh()
-        guard !forceSync || allowSyncOnRefresh else { return nil }
-        try await syncService.fetchSync(forceSync: forceSync)
-        let ciphers = try await cipherService.fetchAllCiphers()
-        let collections = try await collectionService.fetchAllCollections(includeReadOnly: true)
-        let folders = try await folderService.fetchAllFolders()
-
-        return try await vaultListSections(
-            from: ciphers,
-            collections: collections,
-            folders: folders,
-            filter: VaultListFilter(filterType: filter)
-        )
+        guard !forceSync || allowSyncOnRefresh else { return }
+        try await syncService.fetchSync(forceSync: forceSync, isPeriodic: isPeriodic)
     }
 
     // MARK: Data Methods
@@ -1324,7 +1316,8 @@ extension DefaultVaultRepository: VaultRepository {
     func cipherPublisher() async throws -> AsyncThrowingPublisher<AnyPublisher<[CipherListView], Error>> {
         try await cipherService.ciphersPublisher()
             .asyncTryMap { ciphers in
-                try await self.clientService.vault().ciphers().decryptList(ciphers: ciphers)
+                try await self.clientService.vault().ciphers().decryptListWithFailures(ciphers: ciphers)
+                    .successes
                     .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             }
             .eraseToAnyPublisher()
@@ -1347,7 +1340,7 @@ extension DefaultVaultRepository: VaultRepository {
         group: VaultListGroup? = nil,
         rpID: String?,
         uri: String?
-    ) async throws -> AsyncThrowingPublisher<AnyPublisher<[VaultListSection], Error>> {
+    ) async throws -> AsyncThrowingPublisher<AnyPublisher<VaultListData, Error>> {
         return switch mode {
         case .all:
             try await vaultListPublisher(
@@ -1359,15 +1352,22 @@ extension DefaultVaultRepository: VaultRepository {
                 )
             )
         case .totp:
-            try await totpCiphersAutofillPublisher()
+            try await vaultListPublisher(
+                filter: VaultListFilter(
+                    addTOTPGroup: false,
+                    addTrashGroup: false,
+                    group: .totp
+                )
+            )
         default:
             try await Publishers.CombineLatest(
                 cipherService.ciphersPublisher(),
                 availableFido2CredentialsPublisher
             )
             .asyncTryMap { ciphers, availableFido2Credentials in
-                let decryptedCiphers = try await self.clientService.vault().ciphers().decryptList(ciphers: ciphers)
-                let matchingCiphers = await CipherMatchingHelper(
+                let decryptedCiphers = try await self.clientService.vault().ciphers()
+                    .decryptListWithFailures(ciphers: ciphers).successes
+                let matchingCiphers = await DefaultCipherMatchingHelper(
                     settingsService: self.settingsService,
                     stateService: self.stateService
                 )
@@ -1397,7 +1397,7 @@ extension DefaultVaultRepository: VaultRepository {
         group: VaultListGroup? = nil,
         rpID: String?,
         searchText: String
-    ) async throws -> AsyncThrowingPublisher<AnyPublisher<[VaultListSection], Error>> {
+    ) async throws -> AsyncThrowingPublisher<AnyPublisher<VaultListData, Error>> {
         try await Publishers.CombineLatest(
             searchPublisher(
                 searchText: searchText,
@@ -1449,7 +1449,7 @@ extension DefaultVaultRepository: VaultRepository {
 
     func vaultListPublisher(
         filter: VaultListFilter
-    ) async throws -> AsyncThrowingPublisher<AnyPublisher<[VaultListSection], Error>> {
+    ) async throws -> AsyncThrowingPublisher<AnyPublisher<VaultListData, Error>> {
         try await vaultListDirectorStrategyFactory
             .make(filter: filter)
             .build(filter: filter)
@@ -1473,19 +1473,19 @@ extension DefaultVaultRepository: VaultRepository {
         mode: AutofillListMode,
         rpID: String?,
         searchText: String?
-    ) async throws -> [VaultListSection] {
+    ) async throws -> VaultListData {
         switch mode {
         case .all:
             guard !ciphers.isEmpty else {
-                return []
+                return VaultListData()
             }
-            return [
+            return VaultListData(sections: [
                 VaultListSection(
                     id: "SearchResults",
                     items: ciphers.compactMap { .init(cipherListView: $0) },
                     name: ""
                 ),
-            ]
+            ])
         case .combinedMultipleSections, .passwords:
             var sections = [VaultListSection]()
             if #available(iOSApplicationExtension 17.0, *),
@@ -1498,7 +1498,7 @@ extension DefaultVaultRepository: VaultRepository {
                ) {
                 sections.append(fido2Section)
             } else if ciphers.isEmpty {
-                return []
+                return VaultListData()
             }
 
             let sectionName = getAutofillPasswordsSectionName(
@@ -1514,27 +1514,27 @@ extension DefaultVaultRepository: VaultRepository {
                     name: sectionName
                 )
             )
-            return sections
+            return VaultListData(sections: sections)
         case .combinedSingleSection:
             guard !ciphers.isEmpty else {
-                return []
+                return VaultListData()
             }
 
             let section = try await createAutofillListCombinedSingleSection(from: ciphers)
-            return [section]
+            return VaultListData(sections: [section])
         case .totp:
             let totpVaultListItems = try await totpListItems(from: ciphers, filter: .allVaults)
             guard !totpVaultListItems.isEmpty else {
-                return []
+                return VaultListData()
             }
 
-            return [
+            return VaultListData(sections: [
                 VaultListSection(
                     id: "",
                     items: totpVaultListItems,
                     name: ""
                 ),
-            ]
+            ])
         }
     }
 
@@ -1567,7 +1567,8 @@ extension DefaultVaultRepository: VaultRepository {
         guard let id = cipherView.id, let cipher = try await cipherService.fetchCipher(withId: id) else {
             return nil
         }
-        let decryptedCipherListViews = try await clientService.vault().ciphers().decryptList(ciphers: [cipher])
+        let decryptedCipherListViews = try await clientService.vault().ciphers()
+            .decryptListWithFailures(ciphers: [cipher]).successes
         guard let cipherListView = decryptedCipherListViews.first else {
             return nil
         }
@@ -1682,34 +1683,6 @@ extension DefaultVaultRepository: VaultRepository {
             items: fido2ListItems.compactMap { $0 },
             name: Localizations.passkeysForX(searchText ?? rpID)
         )
-    }
-
-    /// Gets a publisher with Totp cipher items in a single section.
-    /// - Returns: The publisher with the vault list section with the totp items.
-    private func totpCiphersAutofillPublisher(
-    ) async throws -> AsyncThrowingPublisher<AnyPublisher<[VaultListSection], Error>> {
-        try await cipherService.ciphersPublisher()
-            .asyncTryMap { ciphers in
-                let filteredCiphers = ciphers.filter { cipher in
-                    cipher.deletedDate == nil && cipher.login?.totp != nil
-                }
-                return try await self.clientService.vault().ciphers().decryptList(ciphers: filteredCiphers)
-            }
-            .asyncTryMap { cipherViews in
-                let totpVaultListItems = try await self.totpListItems(from: cipherViews, filter: nil)
-                guard !totpVaultListItems.isEmpty else {
-                    return []
-                }
-                return [
-                    VaultListSection(
-                        id: "",
-                        items: totpVaultListItems,
-                        name: ""
-                    ),
-                ]
-            }
-            .eraseToAnyPublisher()
-            .values
     }
 }
 

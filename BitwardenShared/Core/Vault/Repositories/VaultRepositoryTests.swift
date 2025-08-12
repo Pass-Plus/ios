@@ -1,4 +1,5 @@
 import BitwardenKitMocks
+import BitwardenResources
 import BitwardenSdk
 import Combine
 import InlineSnapshotTesting
@@ -59,7 +60,7 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
         stateService = MockStateService()
 
         vaultListDirectorStrategy = MockVaultListDirectorStrategy()
-        vaultListDirectorStrategyFactory.makeFilterReturnValue = vaultListDirectorStrategy
+        vaultListDirectorStrategyFactory.makeReturnValue = vaultListDirectorStrategy
 
         subject = DefaultVaultRepository(
             cipherService: cipherService,
@@ -170,7 +171,7 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
         var iterator = try await subject.cipherPublisher().makeAsyncIterator()
         let publishedCiphers = try await iterator.next()
 
-        XCTAssertEqual(publishedCiphers, ciphers.map(CipherListView.init))
+        XCTAssertEqual(publishedCiphers, ciphers.map { CipherListView(cipher: $0) })
     }
 
     /// `ciphersAutofillPublisher(availableFido2CredentialsPublisher:mode:rpID:uri:)`
@@ -199,7 +200,7 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
             rpID: nil,
             uri: "https://example.com"
         ).makeAsyncIterator()
-        let publishedSections = try await iterator.next()
+        let publishedSections = try await iterator.next()?.sections
 
         XCTAssertEqual(
             publishedSections,
@@ -234,11 +235,11 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 name: "TestingSection"
             ),
         ]
-        let publisher = Just(expectedSections)
+        let publisher = Just(VaultListData(sections: expectedSections))
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
 
-        vaultListDirectorStrategy.buildFilterReturnValue = AsyncThrowingPublisher(publisher)
+        vaultListDirectorStrategy.buildReturnValue = AsyncThrowingPublisher(publisher)
 
         var iterator = try await subject.ciphersAutofillPublisher(
             availableFido2CredentialsPublisher: MockFido2UserInterfaceHelper()
@@ -248,12 +249,12 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
             uri: nil
         ).makeAsyncIterator()
 
-        let wrappedSections = try await iterator.next()
-        let sections = try XCTUnwrap(wrappedSections)
+        let vaultListData = try await iterator.next()
+        let sections = try XCTUnwrap(vaultListData?.sections)
 
-        XCTAssertTrue(vaultListDirectorStrategyFactory.makeFilterCalled)
-        XCTAssertNotNil(vaultListDirectorStrategyFactory.makeFilterReceivedFilter)
-        XCTAssertTrue(vaultListDirectorStrategy.buildFilterCalled)
+        XCTAssertTrue(vaultListDirectorStrategyFactory.makeCalled)
+        XCTAssertNotNil(vaultListDirectorStrategyFactory.makeReceivedFilter)
+        XCTAssertTrue(vaultListDirectorStrategy.buildCalled)
         XCTAssertEqual(sections.count, 1)
         XCTAssertEqual(sections[safeIndex: 0]?.id, "1")
         XCTAssertEqual(sections[safeIndex: 0]?.name, "TestingSection")
@@ -324,8 +325,8 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
             rpID: expectedRpID,
             uri: "https://example.com"
         ).makeAsyncIterator()
-        let sectionsResult = try await iterator.next()
-        let sections = try XCTUnwrap(sectionsResult)
+        let vaultListData = try await iterator.next()
+        let sections = try XCTUnwrap(vaultListData?.sections)
 
         XCTAssertEqual(
             sections[0],
@@ -429,8 +430,8 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
             rpID: expectedRpID,
             uri: "https://example.com"
         ).makeAsyncIterator()
-        let sectionsResult = try await iterator.next()
-        let sections = try XCTUnwrap(sectionsResult)
+        let vaultListData = try await iterator.next()
+        let sections = try XCTUnwrap(vaultListData?.sections)
 
         XCTAssertEqual(
             sections[0],
@@ -515,8 +516,8 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
             rpID: expectedRpID,
             uri: "https://example.com"
         ).makeAsyncIterator()
-        let sectionsResult = try await iterator.next()
-        let sections = try XCTUnwrap(sectionsResult)
+        let vaultListData = try await iterator.next()
+        let sections = try XCTUnwrap(vaultListData?.sections)
 
         XCTAssertEqual(
             sections[0],
@@ -603,36 +604,35 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
     /// `ciphersAutofillPublisher(availableFido2CredentialsPublisher:mode:rpID:uri:)`
     /// returns a publisher for the list of a user's ciphers matching a URI in `.totp` mode.
     func test_ciphersAutofillPublisher_mode_totp() async throws {
-        let ciphers: [Cipher] = [
-            .fixture(
-                id: "1",
-                login: .fixture(
-                    uris: [
-                        .fixture(
-                            uri: "https://bitwarden.com",
-                            match: .exact
-                        ),
-                    ]
-                ),
-                name: "Bitwarden"
-            ),
-            .fixture(
-                creationDate: Date(year: 2024, month: 1, day: 1),
-                id: "2",
-                login: .fixture(
-                    uris: [
-                        .fixture(
-                            uri: "https://example.com",
-                            match: .exact
-                        ),
-                    ],
-                    totp: "123"
-                ),
-                name: "Example",
-                revisionDate: Date(year: 2024, month: 1, day: 1)
+        let expectedSections = [
+            VaultListSection(
+                id: "",
+                items: [
+                    VaultListItem(
+                        id: "1",
+                        itemType: .totp(
+                            name: "Example",
+                            totpModel: VaultListTOTP(
+                                id: "2",
+                                cipherListView: .fixture(),
+                                requiresMasterPassword: false,
+                                totpCode: TOTPCodeModel(
+                                    code: "123456",
+                                    codeGenerationDate: .now,
+                                    period: 30
+                                )
+                            )
+                        )
+                    ),
+                ],
+                name: ""
             ),
         ]
-        cipherService.ciphersSubject.value = ciphers
+        let publisher = Just(VaultListData(sections: expectedSections))
+            .setFailureType(to: Error.self)
+            .eraseToAnyPublisher()
+
+        vaultListDirectorStrategy.buildReturnValue = AsyncThrowingPublisher(publisher)
 
         var iterator = try await subject.ciphersAutofillPublisher(
             availableFido2CredentialsPublisher: MockFido2UserInterfaceHelper()
@@ -641,54 +641,30 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
             rpID: nil,
             uri: "https://example.com"
         ).makeAsyncIterator()
-        let publishedSections = try await iterator.next()
+        let publishedSections = try await iterator.next()?.sections
 
-        try assertInlineSnapshot(of: dumpVaultListSections(XCTUnwrap(publishedSections)), as: .lines) {
+        try assertInlineSnapshot(of: XCTUnwrap(publishedSections).dump(), as: .lines) {
             """
-            Section: 
+            Section[]: 
               - TOTP: 2 Example 123 456 
             """
         }
     }
 
     /// `ciphersAutofillPublisher(availableFido2CredentialsPublisher:mode:rpID:uri:)`
-    /// doesn't return the item on `.totp` mode because of Totp generation throwing.
-    func test_ciphersAutofillPublisher_mode_totpThrowsOnGeneration() async throws {
-        let ciphers: [Cipher] = [
-            .fixture(
-                creationDate: Date(year: 2024, month: 1, day: 1),
-                id: "2",
-                login: .fixture(
-                    uris: [
-                        .fixture(
-                            uri: "https://example.com",
-                            match: .exact
-                        ),
-                    ],
-                    totp: "123"
-                ),
-                name: "Example",
-                revisionDate: Date(year: 2024, month: 1, day: 1)
-            ),
-        ]
-        cipherService.ciphersSubject.value = ciphers
-        clientService.mockVault.generateTOTPCodeResult = .failure(BitwardenTestError.example)
+    /// doesn't return the item on `.totp` mode because of the vault list publisher buildthrows.
+    func test_ciphersAutofillPublisher_mode_totpThrows() async throws {
+        vaultListDirectorStrategy.buildThrowableError = BitwardenTestError.example
 
-        var iterator = try await subject.ciphersAutofillPublisher(
-            availableFido2CredentialsPublisher: MockFido2UserInterfaceHelper()
-                .availableCredentialsForAuthenticationPublisher(),
-            mode: .totp,
-            rpID: nil,
-            uri: "https://example.com"
-        ).makeAsyncIterator()
-        let publishedSections = try await iterator.next()
-        let sections = try XCTUnwrap(publishedSections)
-
-        XCTAssertTrue(sections.isEmpty)
-        XCTAssertEqual(
-            errorReporter.errors as? [TOTPServiceError],
-            [.unableToGenerateCode("Unable to create TOTP code for cipher id 2")]
-        )
+        await assertAsyncThrows(error: BitwardenTestError.example) {
+            _ = try await subject.ciphersAutofillPublisher(
+                availableFido2CredentialsPublisher: MockFido2UserInterfaceHelper()
+                    .availableCredentialsForAuthenticationPublisher(),
+                mode: .totp,
+                rpID: nil,
+                uri: "https://example.com"
+            )
+        }
     }
 
     /// `createAutofillListExcludedCredentialSection(from:)` creates a `VaultListSection`
@@ -993,35 +969,48 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
     func test_fetchSync() async throws {
         stateService.activeAccount = .fixture()
 
-        // If it's not a manual refresh, it should sync.
-        let automaticSections = try await subject.fetchSync(
+        // If it's not a forced sync, it should sync.
+        try await subject.fetchSync(
             forceSync: false,
-            filter: .allVaults
+            filter: .allVaults,
+            isPeriodic: true
         )
         XCTAssertTrue(syncService.didFetchSync)
-        XCTAssertNotNil(automaticSections)
+        XCTAssertTrue(try XCTUnwrap(syncService.fetchSyncIsPeriodic))
 
-        // If it's a manual refresh and the user has allowed sync on refresh,
+        // Same as before but to check `isPeriodic` is passed correctly.
+        syncService.didFetchSync = false
+        stateService.allowSyncOnRefresh["1"] = true
+        try await subject.fetchSync(
+            forceSync: false,
+            filter: .allVaults,
+            isPeriodic: false
+        )
+        XCTAssertTrue(syncService.didFetchSync)
+        XCTAssertFalse(try XCTUnwrap(syncService.fetchSyncIsPeriodic))
+
+        // If it's a forced sync and the user has allowed sync on refresh,
         // it should sync.
         syncService.didFetchSync = false
         stateService.allowSyncOnRefresh["1"] = true
-        let manualSections = try await subject.fetchSync(
+        try await subject.fetchSync(
             forceSync: true,
-            filter: .myVault
+            filter: .myVault,
+            isPeriodic: true
         )
         XCTAssertTrue(syncService.didFetchSync)
-        XCTAssertNotNil(manualSections)
+        XCTAssertTrue(syncService.fetchSyncIsPeriodic == true)
 
-        // If it's a manual refresh and the user has not allowed sync on refresh,
+        // If it's a forced sync and the user has not allowed sync on refresh,
         // it should not sync.
         syncService.didFetchSync = false
         stateService.allowSyncOnRefresh["1"] = false
-        let nilSections = try await subject.fetchSync(
+        try await subject.fetchSync(
             forceSync: true,
-            filter: .allVaults
+            filter: .allVaults,
+            isPeriodic: true
         )
         XCTAssertFalse(syncService.didFetchSync)
-        XCTAssertNil(nilSections)
     }
 
     /// `getDisableAutoTotpCopy()` gets the user's disable auto-copy TOTP value.
@@ -1334,7 +1323,7 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "cafe"
             )
             .makeAsyncIterator()
-        let sections = try await iterator.next()
+        let sections = try await iterator.next()?.sections
         XCTAssertEqual(
             sections,
             [
@@ -1372,7 +1361,7 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "cafe"
             )
             .makeAsyncIterator()
-        let sections = try await iterator.next()
+        let sections = try await iterator.next()?.sections
         XCTAssertEqual(
             sections,
             [
@@ -1407,7 +1396,7 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "312321312"
             )
             .makeAsyncIterator()
-        let sections = try await iterator.next()
+        let sections = try await iterator.next()?.sections
         XCTAssertEqual(
             sections,
             [
@@ -1445,7 +1434,7 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "cafe"
             )
             .makeAsyncIterator()
-        let sections = try await iterator.next()
+        let sections = try await iterator.next()?.sections
         XCTAssertEqual(
             sections,
             [
@@ -1494,7 +1483,7 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "domain"
             )
             .makeAsyncIterator()
-        let sections = try await iterator.next()
+        let sections = try await iterator.next()?.sections
         XCTAssertEqual(
             sections,
             [
@@ -1554,8 +1543,8 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "cafe"
             )
             .makeAsyncIterator()
-        let sectionsResult = try await iterator.next()
-        let sections = try XCTUnwrap(sectionsResult)
+        let vaultListData = try await iterator.next()
+        let sections = try XCTUnwrap(vaultListData?.sections)
 
         XCTAssertEqual(
             sections[0],
@@ -1607,8 +1596,8 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "cafe"
             )
             .makeAsyncIterator()
-        let sectionsResult = try await iterator.next()
-        let sections = try XCTUnwrap(sectionsResult)
+        let vaultListData = try await iterator.next()
+        let sections = try XCTUnwrap(vaultListData?.sections)
 
         XCTAssertTrue(sections.isEmpty)
     }
@@ -1638,8 +1627,8 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "cafe"
             )
             .makeAsyncIterator()
-        let sectionsResult = try await iterator.next()
-        let sections = try XCTUnwrap(sectionsResult)
+        let vaultListData = try await iterator.next()
+        let sections = try XCTUnwrap(vaultListData?.sections)
 
         XCTAssertEqual(
             sections[0],
@@ -1739,8 +1728,8 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "caf"
             )
             .makeAsyncIterator()
-        let sectionsResult = try await iterator.next()
-        let sections = try XCTUnwrap(sectionsResult)
+        let vaultListData = try await iterator.next()
+        let sections = try XCTUnwrap(vaultListData?.sections)
 
         XCTAssertEqual(
             sections[0],
@@ -1782,8 +1771,8 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "cafe"
             )
             .makeAsyncIterator()
-        let sectionsResult = try await iterator.next()
-        let sections = try XCTUnwrap(sectionsResult)
+        let vaultListData = try await iterator.next()
+        let sections = try XCTUnwrap(vaultListData?.sections)
 
         XCTAssertTrue(sections.isEmpty)
     }
@@ -1854,7 +1843,7 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "bcd"
             )
             .makeAsyncIterator()
-        let sections = try await iterator.next()
+        let sections = try await iterator.next()?.sections
         XCTAssertEqual(
             sections,
             [
@@ -1900,8 +1889,8 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "caf"
             )
             .makeAsyncIterator()
-        let sectionsResult = try await iterator.next()
-        let sections = try XCTUnwrap(sectionsResult)
+        let vaultListData = try await iterator.next()
+        let sections = try XCTUnwrap(vaultListData?.sections)
 
         assertInlineSnapshot(of: dumpVaultListSections(sections), as: .lines) {
             """
@@ -1941,8 +1930,8 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "caf"
             )
             .makeAsyncIterator()
-        let sectionsResult = try await iterator.next()
-        let sections = try XCTUnwrap(sectionsResult)
+        let vaultListData = try await iterator.next()
+        let sections = try XCTUnwrap(vaultListData?.sections)
 
         XCTAssertTrue(sections.isEmpty)
         XCTAssertEqual(
@@ -1973,7 +1962,7 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "cafe"
             )
             .makeAsyncIterator()
-        let sections = try await iterator.next()
+        let sections = try await iterator.next()?.sections
         XCTAssertEqual(sections?.count, 1)
         let section = try XCTUnwrap(sections?.first)
         XCTAssertEqual(section.items.count, 3)
@@ -2005,7 +1994,7 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 searchText: "cafe"
             )
             .makeAsyncIterator()
-        let sections = try await iterator.next()
+        let sections = try await iterator.next()?.sections
         XCTAssertEqual(sections?.count, 1)
         let section = try XCTUnwrap(sections?.first)
         XCTAssertEqual(section.items.count, 1)
@@ -2813,20 +2802,20 @@ class VaultRepositoryTests: BitwardenTestCase { // swiftlint:disable:this type_b
                 name: "TestingSection"
             ),
         ]
-        let publisher = Just(expectedSections)
+        let publisher = Just(VaultListData(sections: expectedSections))
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
 
-        vaultListDirectorStrategy.buildFilterReturnValue = AsyncThrowingPublisher(publisher)
+        vaultListDirectorStrategy.buildReturnValue = AsyncThrowingPublisher(publisher)
 
         let filter = VaultListFilter(addTOTPGroup: true)
         var iterator = try await subject.vaultListPublisher(filter: filter).makeAsyncIterator()
-        let wrappedSections = try await iterator.next()
-        let sections = try XCTUnwrap(wrappedSections)
+        let vaultListData = try await iterator.next()
+        let sections = try XCTUnwrap(vaultListData?.sections)
 
-        XCTAssertTrue(vaultListDirectorStrategyFactory.makeFilterCalled)
-        XCTAssertNotNil(vaultListDirectorStrategyFactory.makeFilterReceivedFilter)
-        XCTAssertTrue(vaultListDirectorStrategy.buildFilterCalled)
+        XCTAssertTrue(vaultListDirectorStrategyFactory.makeCalled)
+        XCTAssertNotNil(vaultListDirectorStrategyFactory.makeReceivedFilter)
+        XCTAssertTrue(vaultListDirectorStrategy.buildCalled)
         XCTAssertEqual(sections.count, 1)
         XCTAssertEqual(sections[safeIndex: 0]?.id, "1")
         XCTAssertEqual(sections[safeIndex: 0]?.name, "TestingSection")

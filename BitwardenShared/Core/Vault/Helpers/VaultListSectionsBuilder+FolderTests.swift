@@ -51,9 +51,9 @@ class VaultListSectionsBuilderFolderTests: BitwardenTestCase {
             )
         )
 
-        let sections = try await subject.addFoldersSection().build()
+        let vaultListData = try await subject.addFoldersSection().build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
             Section[Folders]: Folders
               - Group[2]: afolder2 (5)
@@ -81,9 +81,9 @@ class VaultListSectionsBuilderFolderTests: BitwardenTestCase {
             )
         )
 
-        let sections = try await subject.addFoldersSection().build()
+        let vaultListData = try await subject.addFoldersSection().build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
             Section[Folders]: Folders
               - Group[2]: afolder2 (5)
@@ -115,9 +115,9 @@ class VaultListSectionsBuilderFolderTests: BitwardenTestCase {
             )
         )
 
-        let sections = try await subject.addFoldersSection(nestedFolderId: "2").build()
+        let vaultListData = try await subject.addFoldersSection(nestedFolderId: "2").build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
             Section[Folders]: Folders
               - Group[3]: sub1 (15)
@@ -148,14 +148,40 @@ class VaultListSectionsBuilderFolderTests: BitwardenTestCase {
             )
         )
 
-        let sections = try await subject.addFoldersSection().build()
+        let vaultListData = try await subject.addFoldersSection().build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
             Section[Folders]: Folders
               - Group[2]: afolder2 (5)
               - Group[1]: folder1 (20)
               - Group[3]: folder3 (0)
+            Section[NoFolder]: No Folder
+              - Cipher: Cipher1
+              - Cipher: Cipher2
+              - Cipher: Cipher3
+            """
+        }
+    }
+
+    /// `addFoldersSection(:)` adds the "No Folder" section even when there are no
+    /// other folders.
+    func test_addFoldersSection_noFolderWithEmptyFolders() async throws {
+        setUpSubject(
+            withData: VaultListPreparedData(
+                folders: [],
+                noFolderItems: [
+                    .fixture(cipherListView: .fixture(id: "2", name: "Cipher2")),
+                    .fixture(cipherListView: .fixture(id: "3", name: "Cipher3")),
+                    .fixture(cipherListView: .fixture(id: "1", name: "Cipher1")),
+                ]
+            )
+        )
+
+        let vaultListData = try await subject.addFoldersSection().build()
+
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
+            """
             Section[NoFolder]: No Folder
               - Cipher: Cipher1
               - Cipher: Cipher2
@@ -187,9 +213,9 @@ class VaultListSectionsBuilderFolderTests: BitwardenTestCase {
             )
         )
 
-        let sections = try await subject.addFoldersSection().build()
+        let vaultListData = try await subject.addFoldersSection().build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
             Section[Folders]: Folders
               - Group[2]: afolder2 (5)
@@ -224,9 +250,9 @@ class VaultListSectionsBuilderFolderTests: BitwardenTestCase {
             )
         )
 
-        let sections = try await subject.addFoldersSection().build()
+        let vaultListData = try await subject.addFoldersSection().build()
 
-        assertInlineSnapshot(of: sections.dump(), as: .lines) {
+        assertInlineSnapshot(of: vaultListData.sections.dump(), as: .lines) {
             """
             Section[Folders]: Folders
               - Group[2]: afolder2 (5)

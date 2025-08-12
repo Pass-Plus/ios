@@ -18,7 +18,7 @@ class MockVaultRepository: VaultRepository {
     var ciphersAutofillPublisherUriCalled: String?
     var ciphersSubject = CurrentValueSubject<[CipherListView], Error>([])
     var ciphersAutofillPublisherCalledWithGroup: VaultListGroup?
-    var ciphersAutofillSubject = CurrentValueSubject<[BitwardenShared.VaultListSection], Error>([])
+    var ciphersAutofillSubject = CurrentValueSubject<VaultListData, Error>(VaultListData())
     var cipherDetailsSubject = CurrentValueSubject<CipherView?, Error>(.fixture())
 
     var clearTemporaryDownloadsCalled = false
@@ -58,7 +58,8 @@ class MockVaultRepository: VaultRepository {
 
     var fetchSyncCalled = false
     var fetchSyncForceSync: Bool?
-    var fetchSyncResult: Result<[VaultListSection]?, Error> = .success([])
+    var fetchSyncIsPeriodic: Bool?
+    var fetchSyncResult: Result<Void, Error> = .success(())
 
     var getActiveAccountIdResult: Result<String, StateServiceError> = .failure(.noActiveAccount)
 
@@ -98,7 +99,7 @@ class MockVaultRepository: VaultRepository {
     var saveAttachmentResult: Result<CipherView, Error> = .success(.fixture())
 
     var searchCipherAutofillPublisherCalledWithGroup: VaultListGroup? // swiftlint:disable:this identifier_name
-    var searchCipherAutofillSubject = CurrentValueSubject<[BitwardenShared.VaultListSection], Error>([])
+    var searchCipherAutofillSubject = CurrentValueSubject<VaultListData, Error>(VaultListData())
 
     var searchVaultListSubject = CurrentValueSubject<[VaultListItem], Error>([])
     var searchVaultListFilterType: VaultListFilter?
@@ -117,7 +118,7 @@ class MockVaultRepository: VaultRepository {
     var updateCipherCollectionsCiphers = [CipherView]()
     var updateCipherCollectionsResult: Result<Void, Error> = .success(())
 
-    var vaultListSubject = CurrentValueSubject<[VaultListSection], Error>([])
+    var vaultListSubject = CurrentValueSubject<VaultListData, Error>(VaultListData())
     var vaultListFilter: VaultListFilter?
 
     // MARK: Computed Properties
@@ -151,7 +152,7 @@ class MockVaultRepository: VaultRepository {
         group: BitwardenShared.VaultListGroup?,
         rpID: String?,
         uri: String?
-    ) async throws -> AsyncThrowingPublisher<AnyPublisher<[BitwardenShared.VaultListSection], Error>> {
+    ) async throws -> AsyncThrowingPublisher<AnyPublisher<VaultListData, Error>> {
         ciphersAutofillPublisherUriCalled = uri
         ciphersAutofillPublisherCalledWithGroup = group
         return ciphersAutofillSubject.eraseToAnyPublisher().values
@@ -215,11 +216,13 @@ class MockVaultRepository: VaultRepository {
 
     func fetchSync(
         forceSync: Bool,
-        filter _: VaultFilterType
-    ) async throws -> [VaultListSection]? {
+        filter _: VaultFilterType,
+        isPeriodic: Bool
+    ) async throws {
         fetchSyncCalled = true
         fetchSyncForceSync = forceSync
-        return try fetchSyncResult.get()
+        fetchSyncIsPeriodic = isPeriodic
+        try fetchSyncResult.get()
     }
 
     func getDisableAutoTotpCopy() async throws -> Bool {
@@ -289,7 +292,7 @@ class MockVaultRepository: VaultRepository {
         group: BitwardenShared.VaultListGroup?,
         rpID: String?,
         searchText: String
-    ) async throws -> AsyncThrowingPublisher<AnyPublisher<[BitwardenShared.VaultListSection], Error>> {
+    ) async throws -> AsyncThrowingPublisher<AnyPublisher<VaultListData, Error>> {
         searchCipherAutofillPublisherCalledWithGroup = group
         return searchCipherAutofillSubject.eraseToAnyPublisher().values
     }
@@ -325,7 +328,7 @@ class MockVaultRepository: VaultRepository {
 
     func vaultListPublisher(
         filter: BitwardenShared.VaultListFilter
-    ) async throws -> AsyncThrowingPublisher<AnyPublisher<[VaultListSection], Error>> {
+    ) async throws -> AsyncThrowingPublisher<AnyPublisher<VaultListData, Error>> {
         vaultListFilter = filter
         return vaultListSubject.eraseToAnyPublisher().values
     }

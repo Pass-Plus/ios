@@ -23,7 +23,7 @@ include:
 packages:
   BitwardenSdk:
     url: https://github.com/bitwarden/sdk-swift
-    revision: 0c3baf9d372cd941146616a3d842b78c96a1170f
+    revision: 30923db8cfe7e6dcad987fd7b13a437f040830af
     branch: unstable
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk
@@ -108,6 +108,7 @@ targets:
       - target: AuthenticatorShared
       - target: BitwardenKit/AuthenticatorBridgeKit
       - target: BitwardenKit/BitwardenKit
+      - target: BitwardenKit/BitwardenResources
       - target: BitwardenKit/Networking
       - package: Firebase
         product: FirebaseCrashlytics
@@ -182,17 +183,17 @@ targets:
         buildPhase: none
       - path: AuthenticatorShared/UI/Platform/Application/Support/Generated/Assets.swift
         optional: true
-      - path: AuthenticatorShared/UI/Platform/Application/Support/Generated/Localizations.swift
-        optional: true
       - path: AuthenticatorShared/Core/Vault/Services/Importers/Support/Generated/GoogleAuth.pb.swift
         optional: true
       - path: AuthenticatorShared/Sourcery/sourcery.yml
         buildPhase: none
     dependencies:
-      - target: BitwardenKit/AuthenticatorBridgeKit
       - package: BitwardenSdk
-      - target: BitwardenKit/Networking
       - package: SwiftProtobuf
+      - target: BitwardenKit/AuthenticatorBridgeKit
+      - target: BitwardenKit/BitwardenKit
+      - target: BitwardenKit/BitwardenResources
+      - target: BitwardenKit/Networking
     preBuildScripts:
       - name: SwiftGen
         script: |
@@ -203,7 +204,6 @@ targets:
         basedOnDependencyAnalysis: false
         outputFiles:
           - $(SRCROOT)/AuthenticatorShared/UI/Platform/Application/Support/Generated/Assets.swift
-          - $(SRCROOT)/AuthenticatorShared/UI/Platform/Application/Support/Generated/Localizations.swift
       - name: Protobuf
         script: |
           if [[ ! "$PATH" =~ "/opt/homebrew/bin" ]]; then
