@@ -858,6 +858,11 @@ protocol StateService: AnyObject {
     /// - Returns: A publisher for the sync to authenticator value.
     ///
     func syncToAuthenticatorPublisher() async -> AnyPublisher<(String?, Bool), Never>
+    
+    /// A publisher for the unlock passkey presence for logged in accounts.
+    ///
+    ///  - Returns: A publisher for the unlock passkey presence for logged in accounts.
+    func unlockPasskeyPublisher() async -> AnyPublisher<UnlockPasskeyStatus?, Never>
 }
 
 extension StateService {
@@ -2310,6 +2315,20 @@ actor DefaultStateService: StateService, ConfigStateService { // swiftlint:disab
             }
         }
         .eraseToAnyPublisher()
+    }
+    
+    func unlockPasskeyPublisher() async -> AnyPublisher<UnlockPasskeyStatus?, Never> {
+        activeAccountIdPublisher()
+            .combineLatest(appSettingsStore.unlockPasskeyPublisher())
+            .map { activeAccountId, unlockPasskeyByAccount in
+                guard let activeAccountId else { return nil }
+                return UnlockPasskeyStatus(
+                    isUnlockPasskeyEnabled: unlockPasskeyByAccount[activeAccountId] ?? false,
+                    userId: activeAccountId
+                )
+            }
+            .removeDuplicates()
+            .eraseToAnyPublisher()
     }
 
     // MARK: Private
