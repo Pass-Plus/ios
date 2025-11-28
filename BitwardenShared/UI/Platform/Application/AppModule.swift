@@ -1,4 +1,5 @@
 import BitwardenKit
+import UIKit
 
 // MARK: AppModule
 
@@ -70,6 +71,28 @@ extension DefaultAppModule: FlightRecorderModule {
         stackNavigator: StackNavigator,
     ) -> AnyCoordinator<FlightRecorderRoute, Void> {
         FlightRecorderCoordinator(
+            services: services,
+            stackNavigator: stackNavigator,
+        )
+        .asAnyCoordinator()
+    }
+}
+
+// MARK: - DefaultAppModule + NavigatorBuilderModule
+
+extension DefaultAppModule: NavigatorBuilderModule {
+    public func makeNavigationController() -> UINavigationController {
+        ViewLoggingNavigationController(logger: services.flightRecorder)
+    }
+}
+
+// MARK: - DefaultAppModule + SelectLanguageModule
+
+extension DefaultAppModule: SelectLanguageModule {
+    public func makeSelectLanguageCoordinator(
+        stackNavigator: StackNavigator,
+    ) -> AnyCoordinator<SelectLanguageRoute, Void> {
+        SelectLanguageCoordinator(
             services: services,
             stackNavigator: stackNavigator,
         )
