@@ -8,14 +8,25 @@ options:
   indentWidth: 4
   tabWidth: 4
 include:
+  # FOR OFFLINE BUILD: Enable local SDK by setting LOCAL_SDK environment variable
+  # Create Configs/local-sdk.yml with local path configuration:
+  # packages:
+  #   BitwardenSdk:
+  #     path: ../sdk-swift
+  #     branch: unstable
   - path: Configs/local-sdk.yml
     relativePaths: false
     enable: ${LOCAL_SDK}
 packages:
+  # FOR OFFLINE BUILD: Update to use local path
+  # Example: BitwardenSdk: { path: ../sdk-swift, branch: unstable }
   BitwardenSdk:
     url: https://github.com/bitwarden/sdk-swift
     revision: 8266e167ae8e80f1bf1e9ab96ee5a4d46162c059 # 1.0.0-2742-fc75b90
     branch: unstable
+  # FOR OFFLINE BUILD: Update to use local paths for these packages if needed
+  # Clone firebase-ios-sdk, swift-snapshot-testing, and ViewInspector locally
+  # Example: Firebase: { path: ../firebase-ios-sdk, exactVersion: 11.14.0 }
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk
     exactVersion: 11.14.0
